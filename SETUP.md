@@ -14,7 +14,7 @@
 | `index.html` | Redirects the site root to `register.html` |
 
 ## 1. Backend (Google Sheet + Apps Script)
-1. Sign in with the **temple's** Google account. Create a new Google Sheet named "Temple Parking Passes".
+1. Sign in to Google as **lkathir-project@gmail.com**. Create a new Google Sheet named "Temple Parking Passes".
 2. **Extensions → Apps Script.** Delete the sample code, paste all of `Code.gs`, and save.
 3. **Project Settings (gear icon) → Script Properties → Add property** twice:
    - `VOLUNTEER_PIN` = a PIN for parking volunteers
@@ -27,7 +27,7 @@
 ## 2. Website (GitHub Pages, free, https)
 1. In `config.js`, paste the Web App URL into `API_URL` and check `TEMPLE_NAME`. Commit and push.
 2. On GitHub: repo → **Settings → Pages → Source: Deploy from a branch → `main` / root → Save**.
-3. After about a minute the site is live at `https://<github-user>.github.io/temple-parking-pass/`:
+3. After about a minute the site is live at `https://murugantemplenj.github.io/temple-parking-pass/`:
    - Devotees: `.../temple-parking-pass/` (opens the registration page)
    - Volunteers: `.../temple-parking-pass/scan.html`
    - Dashboard: `.../temple-parking-pass/dashboard.html`
