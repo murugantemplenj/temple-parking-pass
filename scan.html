@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Parking Scanner</title>
+<link rel="stylesheet" href="style.css">
+<script src="lib/html5-qrcode.min.js"></script>
+<script src="config.js"></script>
+<style>
+  #reader { width: 100%; border-radius: 12px; overflow: hidden; background: #000; min-height: 260px; }
+  #result { position: fixed; inset: 0; display: flex; flex-direction: column; justify-content: center; align-items: center;
+            text-align: center; color: #fff; padding: 24px; z-index: 10; }
+  #result.OK { background: var(--ok); } #result.USED { background: var(--warn); }
+  #result.WRONG_DAY, #result.INVALID, #result.ERR { background: var(--bad); } #result.WAIT { background: #555; }
+  #result .icon { font-size: 90px; line-height: 1; }
+  #result .head { font-size: 38px; font-weight: 900; margin: 10px 0; }
+  #result .msg { font-size: 20px; margin-bottom: 8px; }
+  #result .det { font-size: 22px; font-weight: 700; white-space: pre-line; line-height: 1.4; }
+  #result button { margin-top: 28px; background: #fff; color: #222; width: 80%; max-width: 320px; font-size: 22px; }
+  .row { display: flex; gap: 8px; } .row input { flex: 1; } .row button { background: var(--maroon); color: #fff; }
+</style>
+</head>
+<body>
+<div id="demo" class="demo" hidden>DEMO MODE — demo volunteer PIN is 246810</div>
+<header><div class="t" id="temple"></div><h1>Parking Scanner</h1></header>
+<main>
+  <div id="pinCard" class="card" hidden>
+    <b>Volunteer sign-in</b>
+    <label for="pin">Volunteer PIN</label>
+    <input id="pin" type="password" inputmode="numeric" autocomplete="off">
+    <button class="btn" id="pinSave">Start scanning</button>
+    <div class="err" id="pinErr"></div>
+  </div>
+
+  <div id="scanCard" hidden>
+    <div class="card">
+      <div id="reader"></div>
+      <div class="muted" id="camMsg" style="margin-top:8px">Point the camera at the devotee's parking QR code.</div>
+    </div>
+    <div class="card">
+      <b>No QR? Type the code or phone number</b>
+      <div class="row" style="margin-top:8px">
+        <input id="manual" placeholder="XK7 P4Q or 7325551234" autocapitalize="characters">
+        <button id="manualGo">Check</button>
+      </div>
+    </div>
+    <button class="btn2" id="signOut">Sign out this phone</button>
+  </div>
+</main>
+
+<div id="result" hidden>
+  <div class="icon" id="rIcon"></div>
+  <div class="head" id="rHead"></div>
+  <div class="msg" id="rMsg"></div>
+  <div class="det" id="rDet"></div>
+  <button id="next">Next car</button>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const PIN_KEY = 'pp_vpin';
+let scanner = null, busy = false, pendingCode = new URLSearchParams(location.search).get('c');
+
+$('#temple').textContent = TEMPLE_NAME;
+if (DEMO) $('#demo').hidden = false;
+
+function showPin(msg) {
+  $('#scanCard').hidden = true; $('#pinCard').hidden = false; $('#pinErr').textContent = msg || '';
+  stopCam();
+}
+function showScanner() {
+  $('#pinCard').hidden = true; $('#scanCard').hidden = false;
+  startCam();
+  if (pendingCode) { const c = pendingCode; pendingCode = null; check({ code: c }); }
+}
+
+$('#pinSave').onclick = () => {
+  const p = $('#pin').value.trim();
+  if (!p) return;
+  lsSet(PIN_KEY, p); showScanner();
+};
+$('#signOut').onclick = () => { lsDel(PIN_KEY); showPin(); };
+
+function startCam() {
+  if (scanner || !window.Html5Qrcode) {
+    if (!window.Html5Qrcode) $('#camMsg').textContent = 'Camera scanner could not load. Use the box below.';
+    return;
+  }
+  scanner = new Html5Qrcode('reader');
+  scanner.start({ facingMode: 'environment' }, { fps: 10, qrbox: { width: 230, height: 230 } }, text => {
+    if (busy) return;
+    busy = true;
+    try { scanner.pause(true); } catch (e) {}
+    check({ code: text });
+  }).catch(() => {
+    $('#camMsg').textContent = 'Camera not available. Allow camera access (site must be https), or type the code below.';
+    scanner = null;
+  });
+}
+function stopCam() { if (scanner) { scanner.stop().catch(() => {}); scanner = null; } }
+
+function show(status, head, msg, det) {
+  const icons = { OK: '✅', USED: '⚠️', WRONG_DAY: '⛔', INVALID: '⛔', ERR: '📶', WAIT: '⏳' };
+  const r = $('#result');
+  r.className = status; r.hidden = false;
+  $('#rIcon').textContent = icons[status] || '';
+  $('#rHead').textContent = head; $('#rMsg').textContent = msg || ''; $('#rDet').textContent = det || '';
+  $('#next').hidden = status === 'WAIT';
+}
+
+async function check(q) {
+  busy = true;
+  show('WAIT', 'Checking…');
+  if (navigator.vibrate) navigator.vibrate(60);
+  try {
+    const r = await api('checkin', Object.assign({ pin: lsGet(PIN_KEY) }, q));
+    if (r.status === 'PIN') { $('#result').hidden = true; busy = false; lsDel(PIN_KEY); return showPin(r.error); }
+    if (!r.ok) return show('ERR', 'Error', r.error || 'Try again');
+    const det = r.name ? `${r.name}\n${fmtPhone(r.phone)}\n${r.people} ${r.people == 1 ? 'person' : 'people'} · Code ${fmtCode(r.code)}` : '';
+    if (r.status === 'OK') {
+      show('OK', 'ALLOW PARKING', r.eventName, det);
+      if (navigator.vibrate) navigator.vibrate([80, 60, 80]);
+    } else if (r.status === 'USED') show('USED', 'ALREADY USED', r.message, det);
+    else if (r.status === 'WRONG_DAY') show('WRONG_DAY', 'NOT VALID TODAY', r.message, det);
+    else show('INVALID', 'NOT VALID', r.message);
+  } catch (e) {
+    show('ERR', 'No connection', 'Check signal and try again.');
+  }
+}
+
+$('#next').onclick = () => {
+  $('#result').hidden = true; busy = false; $('#manual').value = '';
+  try { if (scanner) scanner.resume(); } catch (e) {}
+};
+$('#manualGo').onclick = () => {
+  const v = $('#manual').value.trim();
+  if (!v) return;
+  try { if (scanner) scanner.pause(true); } catch (e) {}
+  const digits = v.replace(/\D/g, '');
+  check(digits.length >= 10 && digits.length === v.replace(/[\s()+.-]/g, '').length ? { phone: v } : { code: v });
+};
+
+lsGet(PIN_KEY) ? showScanner() : showPin();
+</script>
+</body>
+</html>

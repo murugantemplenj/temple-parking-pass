@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Temple Parking Pass</title>
+<link rel="stylesheet" href="style.css">
+<script src="lib/qrcode.js"></script>
+<script src="config.js"></script>
+</head>
+<body>
+<div id="demo" class="demo" hidden>DEMO MODE — add your Web App URL in config.js to go live</div>
+<header><div class="t" id="temple"></div><h1>Parking Pass</h1></header>
+<main>
+  <div id="saved" class="card saved" hidden>
+    <b>Your parking passes</b>
+    <div id="savedList"></div>
+  </div>
+
+  <form id="form" class="card" hidden autocomplete="on">
+    <div class="muted">Takes 30 seconds. You need this pass to park at the temple.</div>
+    <label for="event">Event</label>
+    <select id="event" required></select>
+    <label for="name">Name</label>
+    <input id="name" name="name" autocomplete="name" required minlength="2" maxlength="60" placeholder="Your name">
+    <label for="phone">Phone number</label>
+    <input id="phone" name="tel" type="tel" inputmode="tel" autocomplete="tel" required placeholder="(732) 555-1234">
+    <label for="people">Number of people in your car</label>
+    <div class="stepper">
+      <button type="button" id="minus" aria-label="Fewer">−</button>
+      <input id="people" type="number" inputmode="numeric" min="1" max="20" value="1" required>
+      <button type="button" id="plus" aria-label="More">+</button>
+    </div>
+    <button class="btn" id="submit" type="submit">Get my Parking Pass</button>
+    <div class="err" id="err"></div>
+  </form>
+
+  <div id="msg" class="card" hidden></div>
+
+  <div id="pass" class="card pass" hidden>
+    <div class="ev" id="pEvent"></div>
+    <div class="day" id="pDay"></div>
+    <div id="pQr"></div>
+    <table class="info">
+      <tr><th>Code</th><td class="code" id="pCode"></td></tr>
+      <tr><th>Name</th><td id="pName"></td></tr>
+      <tr><th>Phone</th><td id="pPhone"></td></tr>
+      <tr><th>People</th><td id="pPeople"></td></tr>
+    </table>
+    <div class="tip">📸 <b>Take a screenshot</b> and show this QR code to the parking volunteer.<br>Valid only on <b id="pValid"></b>.</div>
+    <button class="btn2" id="another">Register another event / car</button>
+  </div>
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+const PASSES_KEY = 'pp_passes', ME_KEY = 'pp_me';
+
+$('#temple').textContent = TEMPLE_NAME;
+if (DEMO) $('#demo').hidden = false;
+
+const me = JSON.parse(lsGet(ME_KEY) || '{}');
+if (me.name) $('#name').value = me.name;
+if (me.phone) $('#phone').value = me.phone;
+
+$('#minus').onclick = () => { $('#people').value = Math.max(1, (+$('#people').value || 1) - 1); };
+$('#plus').onclick = () => { $('#people').value = Math.min(20, (+$('#people').value || 0) + 1); };
+$('#another').onclick = () => { $('#pass').hidden = true; $('#form').hidden = false; window.scrollTo(0, 0); };
+
+function savedPasses() {
+  const today = localYmd();
+  return JSON.parse(lsGet(PASSES_KEY) || '[]').filter(p => p.date >= today);
+}
+function renderSaved() {
+  const list = savedPasses();
+  $('#saved').hidden = !list.length;
+  $('#savedList').innerHTML = list.map((p, i) =>
+    `<button type="button" data-i="${i}">🚗 ${esc(p.dateLabel)} — ${esc(p.eventName)} · ${esc(fmtCode(p.code))}</button>`).join('');
+  $('#savedList').querySelectorAll('button').forEach(b => b.onclick = () => showPass(list[+b.dataset.i]));
+}
+
+function showPass(p) {
+  const url = new URL('scan.html?c=' + p.code, location.href).href;
+  if (window.qrcode) {
+    const qr = qrcode(0, 'M'); qr.addData(url); qr.make();
+    $('#pQr').innerHTML = `<img alt="Parking QR code" src="${qr.createDataURL(8, 2)}">`;
+  } else {
+    $('#pQr').innerHTML = '<div class="muted">(QR could not load — show the code below)</div>';
+  }
+  $('#pEvent').textContent = p.eventName;
+  $('#pDay').textContent = p.dateLabel;
+  $('#pValid').textContent = p.dateLabel;
+  $('#pCode').textContent = fmtCode(p.code);
+  $('#pName').textContent = p.name;
+  $('#pPhone').textContent = fmtPhone(p.phone);
+  $('#pPeople').textContent = p.people;
+  $('#form').hidden = true; $('#pass').hidden = false;
+  window.scrollTo(0, 0);
+}
+
+async function loadEvents() {
+  try {
+    const r = await api('events');
+    const events = (r && r.events) || [];
+    if (!events.length) { $('#msg').hidden = false; $('#msg').textContent = 'No events are open for parking registration right now.'; return; }
+    $('#event').innerHTML = events.map(e =>
+      `<option value="${esc(e.id)}">${e.isToday ? 'TODAY — ' : ''}${esc(e.label)} — ${esc(e.name)}</option>`).join('');
+    $('#form').hidden = false;
+  } catch (e) {
+    $('#msg').hidden = false; $('#msg').textContent = 'Could not load events. Please check your connection and refresh.';
+  }
+}
+
+$('#form').addEventListener('submit', async ev => {
+  ev.preventDefault();
+  $('#err').textContent = '';
+  const data = { eventId: $('#event').value, name: $('#name').value.trim(), phone: $('#phone').value, people: $('#people').value };
+  $('#submit').disabled = true; $('#submit').textContent = 'Getting your pass…';
+  try {
+    const r = await api('register', data);
+    if (!r.ok) { $('#err').textContent = r.error || 'Something went wrong.'; return; }
+    lsSet(ME_KEY, JSON.stringify({ name: data.name, phone: data.phone }));
+    const p = { code: r.code, eventName: r.eventName, date: r.date, dateLabel: r.dateLabel, name: r.name, phone: r.phone || data.phone, people: r.people };
+    const all = JSON.parse(lsGet(PASSES_KEY) || '[]').filter(x => x.code !== p.code && x.date >= localYmd());
+    all.push(p); lsSet(PASSES_KEY, JSON.stringify(all));
+    renderSaved(); showPass(p);
+  } catch (e) {
+    $('#err').textContent = 'No connection. Please try again.';
+  } finally {
+    $('#submit').disabled = false; $('#submit').textContent = 'Get my Parking Pass';
+  }
+});
+
+renderSaved();
+loadEvents();
+</script>
+</body>
+</html>

@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Parking Dashboard</title>
+<link rel="stylesheet" href="style.css">
+<script src="config.js"></script>
+</head>
+<body>
+<div id="demo" class="demo" hidden>DEMO MODE — demo admin PIN is 975310</div>
+<header><div class="t" id="temple"></div><h1>Parking &amp; Crowd Dashboard</h1></header>
+<main class="wide">
+  <div id="pinCard" class="card" hidden style="max-width:420px;margin:0 auto">
+    <label for="pin">Admin PIN</label>
+    <input id="pin" type="password" inputmode="numeric">
+    <button class="btn" id="go">Open dashboard</button>
+    <div class="err" id="err"></div>
+  </div>
+
+  <div id="dash" hidden>
+    <label for="evSel" style="margin-top:0">Event</label>
+    <select id="evSel"></select>
+    <div class="muted" id="evState" style="margin:6px 0 14px"></div>
+
+    <div class="tiles">
+      <div class="card cook"><div class="big" id="tPeople">0</div><div class="muted">people registered — cook for this many</div></div>
+      <div class="card"><div class="big" id="tCars">0</div><div class="muted" id="tCarsLbl">cars registered</div></div>
+      <div class="card"><div class="big" id="tPeopleIn">0</div><div class="muted">people arrived</div></div>
+      <div class="card"><div class="big" id="tCarsIn">0</div><div class="muted">cars arrived</div></div>
+    </div>
+
+    <div class="card">
+      <div class="toolbar">
+        <input id="q" type="search" placeholder="Search name, phone or code">
+        <button id="csv">Download CSV</button>
+        <button id="refresh">Refresh</button>
+      </div>
+      <div class="tablewrap">
+        <table class="list">
+          <thead><tr><th>#</th><th>Name</th><th>Phone</th><th class="n">People</th><th>Code</th><th>Registered</th><th>Arrived</th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+      <div class="muted" id="count" style="margin-top:8px"></div>
+    </div>
+    <div class="muted" id="upd"></div>
+    <button class="btn2" id="signOut" style="max-width:300px">Sign out</button>
+  </div>
+</main>
+<script>
+const $ = s => document.querySelector(s);
+const KEY = 'pp_apin';
+let timer, data = null, selected = '';
+$('#temple').textContent = TEMPLE_NAME;
+if (DEMO) $('#demo').hidden = false;
+
+$('#go').onclick = () => { lsSet(KEY, $('#pin').value.trim()); load(); };
+$('#pin').onkeydown = e => { if (e.key === 'Enter') $('#go').click(); };
+$('#refresh').onclick = load;
+$('#signOut').onclick = () => { lsDel(KEY); clearTimeout(timer); $('#dash').hidden = true; $('#pinCard').hidden = false; };
+$('#evSel').onchange = () => { selected = $('#evSel').value; load(); };
+$('#q').oninput = renderRows;
+
+async function load() {
+  const pin = lsGet(KEY);
+  if (!pin) { $('#pinCard').hidden = false; return; }
+  clearTimeout(timer);
+  try {
+    const r = await api('dashboard', { pin: pin, eventId: selected });
+    if (!r.ok) { lsDel(KEY); $('#dash').hidden = true; $('#pinCard').hidden = false; $('#err').textContent = r.error; return; }
+    data = r; selected = r.selected;
+    $('#pinCard').hidden = true; $('#dash').hidden = false;
+    render();
+    $('#upd').textContent = 'Updated ' + r.updated + ' · refreshes every minute';
+  } catch (e) {
+    $('#upd').textContent = 'Could not refresh (no connection). Will retry.';
+  }
+  timer = setTimeout(load, 60000);
+}
+
+function render() {
+  const evs = data.events.slice().reverse(); // newest first
+  if (!evs.length) { $('#evSel').innerHTML = '<option>No events in the Events sheet</option>'; return; }
+  $('#evSel').innerHTML = evs.map(e =>
+    `<option value="${esc(e.id)}"${e.id === selected ? ' selected' : ''}>${e.date === data.today ? 'TODAY — ' : ''}${esc(e.dateLabel)} — ${esc(e.name)}</option>`).join('');
+  const e = data.events.find(x => x.id === selected) || evs[0];
+  $('#evState').textContent = (e.date < data.today ? 'Past event' : e.open ? 'Registration open' : 'Registration closed') +
+    (e.spots ? ` · ${e.spots} parking spots` : '');
+  $('#tPeople').textContent = e.people;
+  $('#tCars').textContent = e.cars;
+  $('#tCarsLbl').textContent = e.spots ? `cars registered (of ${e.spots} spots)` : 'cars registered';
+  $('#tPeopleIn').textContent = e.peopleIn;
+  $('#tCarsIn').textContent = e.carsIn;
+  renderRows();
+}
+
+function filtered() {
+  const q = $('#q').value.trim().toLowerCase();
+  const qd = q.replace(/\D/g, '');
+  const qc = q.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  return (data.passes || []).filter(p => !q ||
+    p.name.toLowerCase().includes(q) || (qd.length >= 3 && p.phone.includes(qd)) || (qc.length >= 3 && p.code.includes(qc)));
+}
+
+function renderRows() {
+  if (!data) return;
+  const list = filtered();
+  $('#rows').innerHTML = list.length ? list.map((p, i) => `<tr>
+      <td>${i + 1}</td><td>${esc(p.name)}</td><td>${esc(fmtPhone(p.phone))}</td><td class="n">${p.people}</td>
+      <td class="mono">${esc(fmtCode(p.code))}</td><td>${esc(p.registered)}</td>
+      <td>${p.arrived ? `<span class="pill in">✓ ${esc(p.arrived)}</span>` : '<span class="pill out">not yet</span>'}</td></tr>`).join('')
+    : '<tr><td colspan="7" class="muted">No registrations yet.</td></tr>';
+  const ppl = list.reduce((a, p) => a + p.people, 0);
+  $('#count').textContent = `${list.length} car${list.length === 1 ? '' : 's'} · ${ppl} people` + ($('#q').value ? ' (filtered)' : '');
+}
+
+$('#csv').onclick = () => {
+  if (!data) return;
+  const e = data.events.find(x => x.id === selected) || {};
+  const cell = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+  const lines = [['Name', 'Phone', 'People', 'Code', 'Registered', 'Arrived'].map(cell).join(',')]
+    .concat((data.passes || []).map(p => [p.name, fmtPhone(p.phone), p.people, p.code, p.registered, p.arrived].map(cell).join(',')));
+  const blob = new Blob([lines.join('\r\n')], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `parking-${e.date || 'event'}-${(e.name || '').replace(/\W+/g, '-')}.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+};
+
+load();
+</script>
+</body>
+</html>
