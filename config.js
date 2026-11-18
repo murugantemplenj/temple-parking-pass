@@ -1,6 +1,6 @@
 // ===== EDIT THESE TWO LINES =====
 // Paste the Apps Script Web App URL (ends with /exec). Until you do, pages run in DEMO mode.
-const API_URL = 'PASTE_YOUR_WEB_APP_URL_HERE';
+const API_URL = 'https://script.google.com/macros/s/AKfycbylGwEue1ApHTB_-CNE76kKshy_mNnTrOr9vdIKsVirqyZuhNWoywNNe4dt53apa9V_/exec';
 const TEMPLE_NAME = 'Arulmigu Dhandayuthapani Swamy Temple';
 // =================================
 
