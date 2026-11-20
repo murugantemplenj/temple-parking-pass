@@ -330,9 +330,9 @@ function sendPassEmail_(p) {
   const html =
     '<div style="font-family:Arial,Helvetica,sans-serif;background:#fff8ee;padding:20px 10px">' +
     '<div style="max-width:420px;margin:0 auto;background:#fff;border:1px solid #ead9c4;border-radius:14px;overflow:hidden">' +
-    '<div style="background:#7a1f1f;color:#fff;text-align:center;padding:14px;border-bottom:4px solid #e8891c">' +
-    '<div style="font-size:12px;opacity:.9">' + htmlEsc_(CONFIG.TEMPLE_NAME) + '</div>' +
-    '<div style="font-size:22px;font-weight:700">Parking Pass</div></div>' +
+    '<div style="background:#fff;text-align:center;padding:12px 12px 8px">' +
+    '<img src="' + CONFIG.SITE_URL + 'img/logo-wide.png" alt="' + htmlEsc_(CONFIG.TEMPLE_NAME) + '" width="240" style="width:240px;max-width:100%;height:auto"></div>' +
+    '<div style="background:#7a1f1f;color:#fff;text-align:center;padding:10px;border-bottom:4px solid #e8891c;font-size:20px;font-weight:700">Parking Pass</div>' +
     '<div style="padding:18px;text-align:center">' +
     '<div style="font-size:20px;font-weight:800;color:#7a1f1f">' + htmlEsc_(p.eventName) + '</div>' +
     '<div style="display:inline-block;background:#e8891c;color:#fff;font-weight:800;padding:4px 12px;border-radius:99px;margin:8px 0 10px">' + htmlEsc_(p.dateLabel) + '</div><br>' +

@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Parking Scanner</title>
 <link rel="stylesheet" href="style.css">
+<link rel="icon" type="image/png" href="img/favicon.png">
+<link rel="apple-touch-icon" href="img/apple-touch-icon.png">
 <script src="lib/html5-qrcode.min.js"></script>
 <script src="config.js"></script>
 <style>
@@ -23,7 +25,10 @@
 </head>
 <body>
 <div id="demo" class="demo" hidden>DEMO MODE — demo volunteer PIN is 246810</div>
-<header><div class="t" id="temple"></div><h1>Parking Scanner</h1></header>
+<header>
+  <div class="brand"><img src="img/logo-wide.png" alt="Arulmigu Dhandayuthapani Swamy Temple, New Jersey" width="720" height="298"></div>
+  <h1>Parking Scanner</h1>
+</header>
 <main>
   <div id="pinCard" class="card" hidden>
     <b>Volunteer sign-in</b>
@@ -62,7 +67,6 @@ const $ = s => document.querySelector(s);
 const PIN_KEY = 'pp_vpin';
 let scanner = null, busy = false, pendingCode = new URLSearchParams(location.search).get('c');
 
-$('#temple').textContent = TEMPLE_NAME;
 if (DEMO) $('#demo').hidden = false;
 
 function showPin(msg) {

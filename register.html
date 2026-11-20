@@ -5,12 +5,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Temple Parking Pass</title>
 <link rel="stylesheet" href="style.css">
+<link rel="icon" type="image/png" href="img/favicon.png">
+<link rel="apple-touch-icon" href="img/apple-touch-icon.png">
 <script src="lib/qrcode.js"></script>
 <script src="config.js"></script>
 </head>
 <body>
 <div id="demo" class="demo" hidden>DEMO MODE — add your Web App URL in config.js to go live</div>
-<header><div class="t" id="temple"></div><h1>Parking Pass</h1></header>
+<header>
+  <div class="brand"><img src="img/logo-wide.png" alt="Arulmigu Dhandayuthapani Swamy Temple, New Jersey" width="720" height="298"></div>
+  <h1>Parking Pass</h1>
+</header>
 <main>
   <div id="saved" class="card saved" hidden>
     <b>Your parking passes</b>
@@ -40,6 +45,7 @@
   <div id="msg" class="card" hidden></div>
 
   <div id="pass" class="card pass" hidden>
+    <img class="seal" src="img/logo-round.png" alt="" width="56" height="56">
     <div class="ev" id="pEvent"></div>
     <div class="day" id="pDay"></div>
     <div id="pQr"></div>
@@ -59,7 +65,6 @@
 const $ = s => document.querySelector(s);
 const PASSES_KEY = 'pp_passes', ME_KEY = 'pp_me';
 
-$('#temple').textContent = TEMPLE_NAME;
 if (DEMO) $('#demo').hidden = false;
 
 const me = JSON.parse(lsGet(ME_KEY) || '{}');
