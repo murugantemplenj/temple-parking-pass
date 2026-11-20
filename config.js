@@ -44,8 +44,9 @@ function mockApi(action, d) {
     let p = db.passes.find(x => x.eventId === ev.id && x.phone === phone);
     const existing = !!p;
     if (!p) { p = { code: Array.from({ length: 6 }, () => 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'[Math.floor(Math.random() * 31)]).join(''), eventId: ev.id, eventName: ev.name, date: ev.date, phone: phone, checkedIn: '' }; db.passes.push(p); }
-    p.name = d.name.trim(); p.people = ppl; if (!existing) p.registered = new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); save();
-    return out({ ok: true, code: p.code, eventId: ev.id, eventName: ev.name, date: ev.date, dateLabel: label(ev.date), name: p.name, phone: phone, people: ppl, existing: existing });
+    if (d.email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(d.email.trim())) return out({ ok: false, error: 'Please check your email address (or leave it blank).' });
+    p.name = d.name.trim(); p.people = ppl; if (d.email) p.email = d.email.trim().toLowerCase(); if (!existing) p.registered = new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); save();
+    return out({ ok: true, code: p.code, eventId: ev.id, eventName: ev.name, date: ev.date, dateLabel: label(ev.date), name: p.name, phone: phone, people: ppl, email: p.email || '', existing: existing, emailSent: false, emailNote: p.email ? 'Demo mode: no email sent.' : '' });
   }
 
   if (action === 'checkin') {
@@ -67,7 +68,7 @@ function mockApi(action, d) {
       return { id: e.id, name: e.name, date: e.date, dateLabel: label(e.date), open: true, spots: e.spots, cars: ps.length, people: ps.reduce((a, p) => a + p.people, 0), carsIn: inn.length, peopleIn: inn.reduce((a, p) => a + p.people, 0) };
     });
     const sel = list.some(e => e.id === d.eventId) ? d.eventId : list[0].id;
-    const passes = db.passes.filter(p => p.eventId === sel).map(p => ({ code: p.code, name: p.name, phone: p.phone, people: p.people, registered: p.registered || '', arrived: p.checkedIn || '' }));
+    const passes = db.passes.filter(p => p.eventId === sel).map(p => ({ code: p.code, name: p.name, phone: p.phone, email: p.email || '', people: p.people, registered: p.registered || '', arrived: p.checkedIn || '' }));
     return out({ ok: true, today: today, updated: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }), events: list, selected: sel, passes: passes });
   }
   return out({ ok: false, error: 'Unknown action' });

@@ -32,13 +32,13 @@
 
     <div class="card">
       <div class="toolbar">
-        <input id="q" type="search" placeholder="Search name, phone or code">
+        <input id="q" type="search" placeholder="Search name, phone, email or code">
         <button id="csv">Download CSV</button>
         <button id="refresh">Refresh</button>
       </div>
       <div class="tablewrap">
         <table class="list">
-          <thead><tr><th>#</th><th>Name</th><th>Phone</th><th class="n">People</th><th>Code</th><th>Registered</th><th>Arrived</th></tr></thead>
+          <thead><tr><th>#</th><th>Name</th><th>Phone</th><th>Email</th><th class="n">People</th><th>Code</th><th>Registered</th><th>Arrived</th></tr></thead>
           <tbody id="rows"></tbody>
         </table>
       </div>
@@ -100,17 +100,17 @@ function filtered() {
   const qd = q.replace(/\D/g, '');
   const qc = q.toUpperCase().replace(/[^A-Z0-9]/g, '');
   return (data.passes || []).filter(p => !q ||
-    p.name.toLowerCase().includes(q) || (qd.length >= 3 && p.phone.includes(qd)) || (qc.length >= 3 && p.code.includes(qc)));
+    p.name.toLowerCase().includes(q) || (p.email || '').includes(q) || (qd.length >= 3 && p.phone.includes(qd)) || (qc.length >= 3 && p.code.includes(qc)));
 }
 
 function renderRows() {
   if (!data) return;
   const list = filtered();
   $('#rows').innerHTML = list.length ? list.map((p, i) => `<tr>
-      <td>${i + 1}</td><td>${esc(p.name)}</td><td>${esc(fmtPhone(p.phone))}</td><td class="n">${p.people}</td>
+      <td>${i + 1}</td><td>${esc(p.name)}</td><td>${esc(fmtPhone(p.phone))}</td><td>${esc(p.email || '')}</td><td class="n">${p.people}</td>
       <td class="mono">${esc(fmtCode(p.code))}</td><td>${esc(p.registered)}</td>
       <td>${p.arrived ? `<span class="pill in">✓ ${esc(p.arrived)}</span>` : '<span class="pill out">not yet</span>'}</td></tr>`).join('')
-    : '<tr><td colspan="7" class="muted">No registrations yet.</td></tr>';
+    : '<tr><td colspan="8" class="muted">No registrations yet.</td></tr>';
   const ppl = list.reduce((a, p) => a + p.people, 0);
   $('#count').textContent = `${list.length} car${list.length === 1 ? '' : 's'} · ${ppl} people` + ($('#q').value ? ' (filtered)' : '');
 }
@@ -119,8 +119,8 @@ $('#csv').onclick = () => {
   if (!data) return;
   const e = data.events.find(x => x.id === selected) || {};
   const cell = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
-  const lines = [['Name', 'Phone', 'People', 'Code', 'Registered', 'Arrived'].map(cell).join(',')]
-    .concat((data.passes || []).map(p => [p.name, fmtPhone(p.phone), p.people, p.code, p.registered, p.arrived].map(cell).join(',')));
+  const lines = [['Name', 'Phone', 'Email', 'People', 'Code', 'Registered', 'Arrived'].map(cell).join(',')]
+    .concat((data.passes || []).map(p => [p.name, fmtPhone(p.phone), p.email || '', p.people, p.code, p.registered, p.arrived].map(cell).join(',')));
   const blob = new Blob([lines.join('\r\n')], { type: 'text/csv' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);

@@ -4,12 +4,18 @@
  *
  * Sheets (created by setup()):
  *   Events : Event ID | Event Name | Date (YYYY-MM-DD) | Open (YES/NO) | Parking Spots
- *   Passes : Code | Event ID | Event Name | Event Date | Name | Phone | People | Registered At | Checked In At
+ *   Passes : Code | Event ID | Event Name | Event Date | Name | Phone | People | Registered At | Checked In At | Email
+ *
+ * Files in the Apps Script project: Code.gs (this file) and QR.gs (QR image generator for emails).
  */
 
 const CONFIG = {
   MAX_PEOPLE: 20,
-  TZ: 'America/New_York'
+  TZ: 'America/New_York',
+  SITE_URL: 'https://murugantemplenj.github.io/temple-parking-pass/',
+  TEMPLE_NAME: 'Arulmigu Dhandayuthapani Swamy Temple',
+  EMAIL_FROM_NAME: 'Murugan Temple Parking',
+  DATETIME_FORMAT: 'M/d/yyyy h:mm am/pm'
 };
 
 // PINs live in Apps Script > Project Settings > Script Properties (not in this file,
@@ -23,11 +29,13 @@ function pin_(name) {
 const EVENTS_SHEET = 'Events';
 const PASSES_SHEET = 'Passes';
 const EVENT_HEADERS = ['Event ID', 'Event Name', 'Date (YYYY-MM-DD)', 'Open (YES/NO)', 'Parking Spots'];
-const PASS_HEADERS = ['Code', 'Event ID', 'Event Name', 'Event Date', 'Name', 'Phone', 'People', 'Registered At', 'Checked In At'];
+const PASS_HEADERS = ['Code', 'Event ID', 'Event Name', 'Event Date', 'Name', 'Phone', 'People', 'Registered At', 'Checked In At', 'Email'];
 const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // no 0/O/1/I/L confusion
 const CODE_LEN = 6;
 
-/* ---------- one-time setup: run this from the Apps Script editor ---------- */
+/* ---------- setup: run this from the Apps Script editor ----------
+ * Safe to run again: it only adds what is missing (new Email column, date+time formats)
+ * and asks for any new permissions (sending email). */
 function setup() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
 
@@ -49,6 +57,14 @@ function setup() {
     ps.setFrozenRows(1);
     ps.getRange(1, 1, 1, PASS_HEADERS.length).setFontWeight('bold');
   }
+  // Upgrade older sheets: add any missing headers (e.g. Email) and show time in the date columns
+  const head = ps.getRange(1, 1, 1, PASS_HEADERS.length).getValues()[0];
+  PASS_HEADERS.forEach((h, i) => { if (!head[i]) ps.getRange(1, i + 1).setValue(h).setFontWeight('bold'); });
+  ps.getRange('H:I').setNumberFormat(CONFIG.DATETIME_FORMAT);
+  ps.getRange('J:J').setNumberFormat('@');
+
+  // Touch MailApp so Run > setup asks for the "send email" permission
+  Logger.log('Emails left today: ' + MailApp.getRemainingDailyQuota());
 }
 
 /* ---------- web API ---------- */
@@ -88,38 +104,66 @@ function register_(req) {
   const name = String(req.name || '').trim().replace(/\s+/g, ' ').slice(0, 60);
   const phone = normPhone_(req.phone);
   const people = parseInt(req.people, 10);
+  const emailRaw = String(req.email || '').trim();
+  const email = normEmail_(emailRaw);
 
   if (name.length < 2) return fail_('Please enter your name.');
   if (!phone) return fail_('Please enter a valid 10-digit phone number.');
   if (!(people >= 1 && people <= CONFIG.MAX_PEOPLE)) return fail_('Number of people must be 1 to ' + CONFIG.MAX_PEOPLE + '.');
+  if (emailRaw && !email) return fail_('Please check your email address (or leave it blank).');
 
-  const ev = readEvents_().find(x => x.id === String(req.eventId || '').trim());
+  const evId = String(req.eventId || '').trim();
+  const matches = readEvents_().filter(x => x.id === evId);
+  if (matches.length > 1) return fail_('Setup problem: two events share the Event ID "' + evId + '". Please tell the temple office.');
+  const ev = matches[0];
   if (!ev || !ev.open || ev.date < today_()) return fail_('Registration for this event is closed.');
 
+  let result;
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
     const sh = sheet_(PASSES_SHEET);
     const data = sh.getDataRange().getValues();
 
-    // Same phone + same event = same car. Return the existing pass (and update name/people).
+    // Same phone + same event = same car. Return the existing pass (and update name/people/email).
     for (let i = 1; i < data.length; i++) {
       if (String(data[i][1]) === ev.id && String(data[i][5]) === phone) {
         sh.getRange(i + 1, 5, 1, 3).setValues([[name, phone, people]]);
-        return passResult_(String(data[i][0]), ev, name, phone, people, true);
+        if (email) sh.getRange(i + 1, 10).setValue(email);
+        result = passResult_(String(data[i][0]), ev, name, phone, people, email || String(data[i][9] || ''), true);
+        break;
       }
     }
 
-    const used = {};
-    for (let i = 1; i < data.length; i++) used[String(data[i][0])] = true;
-    let code;
-    do { code = newCode_(); } while (used[code]);
+    if (!result) {
+      const used = {};
+      for (let i = 1; i < data.length; i++) used[String(data[i][0])] = true;
+      let code;
+      do { code = newCode_(); } while (used[code]);
 
-    sh.appendRow([code, ev.id, ev.name, ev.date, name, phone, people, new Date(), '']);
-    return passResult_(code, ev, name, phone, people, false);
+      sh.appendRow([code, ev.id, ev.name, ev.date, name, phone, people, new Date(), '', email]);
+      sh.getRange(sh.getLastRow(), 8).setNumberFormat(CONFIG.DATETIME_FORMAT);
+      result = passResult_(code, ev, name, phone, people, email, false);
+    }
   } finally {
     lock.releaseLock();
   }
+
+  // Email the pass (outside the lock so other registrations aren't kept waiting)
+  result.emailSent = false;
+  if (result.email) {
+    try {
+      if (MailApp.getRemainingDailyQuota() > 0) {
+        sendPassEmail_(result);
+        result.emailSent = true;
+      } else {
+        result.emailNote = 'Daily email limit reached — please screenshot your pass.';
+      }
+    } catch (err) {
+      result.emailNote = 'Could not send the email — please screenshot your pass.';
+    }
+  }
+  return result;
 }
 
 function checkIn_(req) {
@@ -166,7 +210,7 @@ function checkIn_(req) {
     if (r[8]) {
       return Object.assign(result_('USED', 'Already used at ' + fmtTime_(r[8]) + '.'), info);
     }
-    sh.getRange(rowIdx + 1, 9).setValue(new Date());
+    sh.getRange(rowIdx + 1, 9).setValue(new Date()).setNumberFormat(CONFIG.DATETIME_FORMAT);
     return Object.assign(result_('OK', 'Allow parking'), info);
   } finally {
     lock.releaseLock();
@@ -203,7 +247,7 @@ function dashboard_(req) {
     sel = next ? next.id : (list.length ? list[list.length - 1].id : '');
   }
   const passes = rows.filter(r => String(r[1]) === sel).map(r => ({
-    code: String(r[0]), name: String(r[4]), phone: String(r[5]), people: Number(r[6]) || 0,
+    code: String(r[0]), name: String(r[4]), phone: String(r[5]), people: Number(r[6]) || 0, email: String(r[9] || ''),
     registered: r[7] instanceof Date ? Utilities.formatDate(r[7], CONFIG.TZ, 'MMM d, h:mm a') : String(r[7] || ''),
     arrived: r[8] ? fmtTime_(r[8]) : ''
   }));
@@ -229,10 +273,10 @@ function readEvents_() {
     }));
 }
 
-function passResult_(code, ev, name, phone, people, existing) {
+function passResult_(code, ev, name, phone, people, email, existing) {
   return {
     ok: true, code: code, eventId: ev.id, eventName: ev.name, date: ev.date,
-    dateLabel: prettyDate_(ev.date), name: name, phone: phone, people: people, existing: existing
+    dateLabel: prettyDate_(ev.date), name: name, phone: phone, people: people, email: email, existing: existing
   };
 }
 
@@ -254,6 +298,71 @@ function cleanCode_(v) {
   if (s.length !== CODE_LEN) return '';
   for (let i = 0; i < s.length; i++) if (CODE_CHARS.indexOf(s.charAt(i)) < 0) return '';
   return s;
+}
+
+function normEmail_(v) {
+  const s = String(v || '').trim().toLowerCase();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(s) && s.length <= 100 ? s : '';
+}
+
+function fmtPhone_(p) {
+  const d = String(p || '');
+  return d.length === 10 ? '(' + d.slice(0, 3) + ') ' + d.slice(3, 6) + '-' + d.slice(6) : d;
+}
+
+function htmlEsc_(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+/* ---------- pass email ---------- */
+function sendPassEmail_(p) {
+  // Same QR content as the on-screen pass, drawn by QR.gs (no outside service)
+  const qr = qrcode(0, 'M');
+  qr.addData(CONFIG.SITE_URL + 'scan.html?c=' + p.code);
+  qr.make();
+  const b64 = qr.createDataURL(6, 4).split(',')[1];
+  const qrBlob = Utilities.newBlob(Utilities.base64Decode(b64), 'image/gif', 'parking-pass-' + p.code + '.gif');
+
+  const code = p.code.slice(0, 3) + ' ' + p.code.slice(3);
+  const row = (k, v, style) => '<tr><td style="padding:6px 14px 6px 0;color:#7a6a5f;font-size:14px">' + k +
+    '</td><td style="padding:6px 0;font-size:16px;font-weight:700;' + (style || '') + '">' + v + '</td></tr>';
+
+  const html =
+    '<div style="font-family:Arial,Helvetica,sans-serif;background:#fff8ee;padding:20px 10px">' +
+    '<div style="max-width:420px;margin:0 auto;background:#fff;border:1px solid #ead9c4;border-radius:14px;overflow:hidden">' +
+    '<div style="background:#7a1f1f;color:#fff;text-align:center;padding:14px;border-bottom:4px solid #e8891c">' +
+    '<div style="font-size:12px;opacity:.9">' + htmlEsc_(CONFIG.TEMPLE_NAME) + '</div>' +
+    '<div style="font-size:22px;font-weight:700">Parking Pass</div></div>' +
+    '<div style="padding:18px;text-align:center">' +
+    '<div style="font-size:20px;font-weight:800;color:#7a1f1f">' + htmlEsc_(p.eventName) + '</div>' +
+    '<div style="display:inline-block;background:#e8891c;color:#fff;font-weight:800;padding:4px 12px;border-radius:99px;margin:8px 0 10px">' + htmlEsc_(p.dateLabel) + '</div><br>' +
+    '<img src="cid:qr" width="240" height="240" alt="Parking QR code" style="display:block;margin:0 auto">' +
+    '<table style="margin:10px auto 0;border-collapse:collapse;text-align:left">' +
+    row('Code', code, 'font-family:Menlo,Consolas,monospace;font-size:22px;letter-spacing:3px;color:#7a1f1f') +
+    row('Name', htmlEsc_(p.name)) +
+    row('Phone', htmlEsc_(fmtPhone_(p.phone))) +
+    row('People', String(p.people)) +
+    row('Email', htmlEsc_(p.email)) +
+    '</table>' +
+    '<div style="background:#fdf0dc;border-radius:10px;padding:12px;font-size:14px;margin-top:14px;text-align:left">' +
+    'Show this QR code to the parking volunteer when you arrive.<br>' +
+    'Valid only on <b>' + htmlEsc_(p.dateLabel) + '</b> for <b>' + htmlEsc_(p.eventName) + '</b>.<br><br>' +
+    'Plans changed? Register again at <a href="' + CONFIG.SITE_URL + '">' + CONFIG.SITE_URL.replace(/^https:\/\//, '') + '</a> ' +
+    'with the same phone number to update the number of people. You keep the same pass.</div>' +
+    '</div></div></div>';
+
+  const text = 'Parking Pass — ' + p.eventName + ', ' + p.dateLabel + '\n\n' +
+    'Code: ' + code + '\nName: ' + p.name + '\nPhone: ' + fmtPhone_(p.phone) + '\nPeople: ' + p.people + '\n\n' +
+    'Show the QR code (attached) to the parking volunteer. Valid only on ' + p.dateLabel + '.';
+
+  MailApp.sendEmail({
+    to: p.email,
+    subject: (p.existing ? 'Updated parking pass: ' : 'Your parking pass: ') + p.eventName + ' (' + p.dateLabel + ')',
+    body: text,
+    htmlBody: html,
+    name: CONFIG.EMAIL_FROM_NAME,
+    inlineImages: { qr: qrBlob }
+  });
 }
 
 function normPhone_(v) {

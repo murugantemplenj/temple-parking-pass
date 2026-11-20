@@ -25,6 +25,8 @@
     <input id="name" name="name" autocomplete="name" required minlength="2" maxlength="60" placeholder="Your name">
     <label for="phone">Phone number</label>
     <input id="phone" name="tel" type="tel" inputmode="tel" autocomplete="tel" required placeholder="(732) 555-1234">
+    <label for="email">Email <span class="opt">(optional — we'll email you the pass)</span></label>
+    <input id="email" name="email" type="email" inputmode="email" autocomplete="email" maxlength="100" placeholder="you@example.com">
     <label for="people">Number of people in your car</label>
     <div class="stepper">
       <button type="button" id="minus" aria-label="Fewer">−</button>
@@ -47,6 +49,7 @@
       <tr><th>Phone</th><td id="pPhone"></td></tr>
       <tr><th>People</th><td id="pPeople"></td></tr>
     </table>
+    <div class="emailed" id="pEmail" hidden></div>
     <div class="tip">📸 <b>Take a screenshot</b> and show this QR code to the parking volunteer.<br>Valid only on <b id="pValid"></b>.</div>
     <button class="btn2" id="another">Register another event / car</button>
   </div>
@@ -62,6 +65,7 @@ if (DEMO) $('#demo').hidden = false;
 const me = JSON.parse(lsGet(ME_KEY) || '{}');
 if (me.name) $('#name').value = me.name;
 if (me.phone) $('#phone').value = me.phone;
+if (me.email) $('#email').value = me.email;
 
 $('#minus').onclick = () => { $('#people').value = Math.max(1, (+$('#people').value || 1) - 1); };
 $('#plus').onclick = () => { $('#people').value = Math.min(20, (+$('#people').value || 0) + 1); };
@@ -94,6 +98,7 @@ function showPass(p) {
   $('#pName').textContent = p.name;
   $('#pPhone').textContent = fmtPhone(p.phone);
   $('#pPeople').textContent = p.people;
+  $('#pEmail').hidden = true;
   $('#form').hidden = true; $('#pass').hidden = false;
   window.scrollTo(0, 0);
 }
@@ -114,16 +119,21 @@ async function loadEvents() {
 $('#form').addEventListener('submit', async ev => {
   ev.preventDefault();
   $('#err').textContent = '';
-  const data = { eventId: $('#event').value, name: $('#name').value.trim(), phone: $('#phone').value, people: $('#people').value };
+  const data = { eventId: $('#event').value, name: $('#name').value.trim(), phone: $('#phone').value, email: $('#email').value.trim(), people: $('#people').value };
   $('#submit').disabled = true; $('#submit').textContent = 'Getting your pass…';
   try {
     const r = await api('register', data);
     if (!r.ok) { $('#err').textContent = r.error || 'Something went wrong.'; return; }
-    lsSet(ME_KEY, JSON.stringify({ name: data.name, phone: data.phone }));
+    lsSet(ME_KEY, JSON.stringify({ name: data.name, phone: data.phone, email: data.email }));
     const p = { code: r.code, eventName: r.eventName, date: r.date, dateLabel: r.dateLabel, name: r.name, phone: r.phone || data.phone, people: r.people };
     const all = JSON.parse(lsGet(PASSES_KEY) || '[]').filter(x => x.code !== p.code && x.date >= localYmd());
     all.push(p); lsSet(PASSES_KEY, JSON.stringify(all));
     renderSaved(); showPass(p);
+    const em = $('#pEmail');
+    em.hidden = !r.email;
+    em.className = 'emailed' + (r.emailSent ? '' : ' warn');
+    em.textContent = r.emailSent ? '✉️ Pass also emailed to ' + r.email : (r.emailNote || '');
+    if (!r.emailNote && !r.emailSent) em.hidden = true;
   } catch (e) {
     $('#err').textContent = 'No connection. Please try again.';
   } finally {

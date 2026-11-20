@@ -10,12 +10,12 @@
 | `scan.html` | Parking volunteers: camera scanner |
 | `dashboard.html` | Organizers: live counts for food and parking planning |
 | `config.js`, `style.css`, `lib/` | Supporting files. Keep them next to the pages. |
-| `Code.gs` | Backend. Paste it into Google Apps Script. |
+| `Code.gs`, `QR.gs` | Backend. Paste both into Google Apps Script as two files. `QR.gs` draws the QR image for emailed passes. |
 | `index.html` | Redirects the site root to `register.html` |
 
 ## 1. Backend (Google Sheet + Apps Script)
 1. Sign in to Google as **lkathir.project@gmail.com**. Create a new Google Sheet named "Temple Parking Passes".
-2. **Extensions → Apps Script.** Delete the sample code, paste all of `Code.gs`, and save.
+2. **Extensions → Apps Script.** Delete the sample code, paste all of `Code.gs`, and save. Then click **+ → Script**, name it `QR`, paste all of `QR.gs`, and save.
 3. **Project Settings (gear icon) → Script Properties → Add property** twice:
    - `VOLUNTEER_PIN` = a PIN for parking volunteers
    - `ADMIN_PIN` = a PIN for the dashboard (organizers and kitchen)
@@ -61,5 +61,17 @@ Add one row in the **Events** tab:
 - **Each pass can be checked in once.** A second scan shows "already used".
 - **Passes are saved on the devotee's phone.** Reopening `register.html` shows "Your parking passes".
 
+## Admin pages and PINs
+- **Dashboard (admin):** https://murugantemplenj.github.io/temple-parking-pass/dashboard.html — uses the **ADMIN_PIN**.
+- **Scanner (volunteers):** https://murugantemplenj.github.io/temple-parking-pass/scan.html — uses the **VOLUNTEER_PIN**.
+- **To change a PIN:** Apps Script → **Project Settings (gear)** → **Script Properties** → **Edit script properties** → change the value → **Save**. It takes effect immediately; no redeploy. Phones signed in with the old PIN are asked for the new one on their next scan or refresh.
+
+## Emailed passes
+- Email is optional on the registration form. When given, the pass (QR, code, name, phone, people) is emailed from the Google account that owns the script.
+- **Daily limit:** a free Gmail account can send about **100 emails per day**. After that, devotees still get their pass on screen and are told to take a screenshot. For bigger events, Google Workspace for Nonprofits (free for registered nonprofits) raises this to 1,500 per day.
+- Run `setup` once after updating the code, so Google asks for the "send email" permission.
+
 ## Changing the code later
-In Apps Script, go to **Deploy → Manage deployments → ✏️ → Version: New version → Deploy**. The URL stays the same.
+1. Paste the new `Code.gs` (and `QR.gs` if it changed) into Apps Script and save.
+2. If the update notes say so, run `setup` again (safe to repeat).
+3. **Deploy → Manage deployments → ✏️ → Version: New version → Deploy**. The URL stays the same.

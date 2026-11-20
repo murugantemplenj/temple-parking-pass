@@ -55,3 +55,6 @@ th:first-child, td:first-child { text-align: left; }
 .list .mono { font-family: ui-monospace, Menlo, monospace; letter-spacing: 1px; }
 .pill { display: inline-block; padding: 2px 8px; border-radius: 99px; font-size: 13px; font-weight: 700; }
 .pill.in { background: #dff3e6; color: var(--ok); } .pill.out { background: #f3e6d6; color: var(--muted); }
+.opt { font-weight: 400; color: var(--muted); font-size: 13px; }
+.emailed { margin-top: 10px; font-size: 14px; font-weight: 600; color: var(--ok); }
+.emailed.warn { color: var(--warn); }
